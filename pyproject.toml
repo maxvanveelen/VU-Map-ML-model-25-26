@@ -1,0 +1,16 @@
+[project]
+name = "vu-map-ml-model-main"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.11.6"
+dependencies = [
+    "flask==3.0.3",
+    "keras-tuner==1.4.7",
+    "matplotlib==3.8.2",
+    "numpy==1.26.4",
+    "pandas==2.2.2",
+    "scikit-learn==1.4.2",
+    "scipy==1.14.0",
+    "tensorflow==2.16.1",
+]
