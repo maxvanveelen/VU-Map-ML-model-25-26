@@ -6,3 +6,5 @@ pandas==2.2.2
 scikit_learn==1.4.2
 scipy==1.14.0
 tensorflow==2.16.1
+
+networkx
