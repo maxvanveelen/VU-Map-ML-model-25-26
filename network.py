@@ -1,10 +1,22 @@
+#TODO fix imports 
+
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 import pandas as pd
-from util import X_MAX, Y_MAX, Z_MAX, get_ap_locations_names, least_squares_trilaterate, load_files, filter_columns, evaluate_model, split_data, split_data_parts, trilaterate, unscale_xyz
 import math
+from trajectory import Trajectory
+import pickle
+
+from sklearn.discriminant_analysis import StandardScaler
+from util import X_MAX, Y_MAX, Z_MAX, get_ap_locations_names, least_squares_trilaterate, load_files, filter_columns, evaluate_model, split_data, split_data_parts, trilaterate, unscale_xyz
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
+from sklearn.pipeline import FunctionTransformer, Pipeline, FeatureUnion
+from sklearn.model_selection import GridSearchCV, ParameterGrid
+
+from pipeline import SplitPipeline
 
 def find_node_by_position(G, pos):
     for n, data in G.nodes(data=True):
@@ -26,6 +38,50 @@ def add_weighted_edge(G, node1, node2):
     distance = math.sqrt((node2_x - node1_x)**2 + (node2_z - node1_z)**2)
     
     G.add_edge(node1, node2, weight=distance)
+
+
+# TODO make entire process more clean and maybe use Trajectory class
+def create_path(G, df):
+    G_path = nx.Graph()
+
+    #1. get random readings for certain nodes, say, 0, 31 - 24. (straight line up)
+    #TODO requested nodes should be an argument of the function
+    requested_nodes = [0, 31, 30, 29, 28, 27, 26, 25, 24]
+    requested_node_positions = []
+
+    for n in requested_nodes:
+        requested_node_positions = requested_node_positions + [G.nodes[n].get("pos")]
+        print(n, " = ", G.nodes[n].get("pos"))
+
+    requested_node_random_picks = pd.DataFrame()
+
+    for n in requested_node_positions:
+        matched_rows = df[(df['x'] == n[0]) & (df['z'] == n[1])]
+        random_row = matched_rows.sample(n=1, random_state=None)  # optional random_state for reproducibility
+        requested_node_random_picks = pd.concat([requested_node_random_picks, random_row], ignore_index=True)
+
+    print(requested_node_random_picks)
+
+    #2. get predicted locations from model
+    #TODO: model might not always have this name
+    with open('sklearn_models/multilayer/Direct location prediction-11-12--11-03-11.pkl', 'rb') as file:
+        model = pickle.load(file)
+
+    y_pred = model.predict(requested_node_random_picks)
+    print("Prediction:", y_pred)
+
+    #3. Put predicted locations in a Graph
+    for i, n in enumerate(y_pred):
+        pos = (y_pred[i][0], y_pred[i][2])
+        G_path.add_node(requested_nodes[i], pos=(pos))
+
+    #4. add edges between predicted locations
+    for i, n in enumerate(requested_nodes):
+        if i < len(requested_nodes) - 1:
+            G_path.add_edge(requested_nodes[i], requested_nodes[i+1])
+
+    #TODO return that graph
+    return G_path
 
 def main():
     G = nx.Graph()
@@ -86,6 +142,8 @@ def main():
     add_weighted_edge(G, 30, 31)
     add_weighted_edge(G, 31, 0)
 
+    G_path = create_path(G, df)
+
     # Prepare window with image, flip y-axis of figure and image.
     fig, ax = plt.subplots()
     img = mpimg.imread("floorplans/floor-06-cropped.png")
@@ -102,6 +160,12 @@ def main():
     # Add weight labels to edges
     edge_labels = nx.get_edge_attributes(G, 'weight')
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+
+    # Draw the graph on top of the image (G_path) TODO: make dry or add function for doing this or something
+    pos = nx.get_node_attributes(G_path, 'pos')
+    scale = 5538.46153846 # TODO: this number is just an estimate obtained by dividing the desired x value in the image by the actual x in the dataframe
+    pos = {node: (x * scale, y * scale) for node, (x, y) in pos.items()}
+    nx.draw(G_path, pos, with_labels=True, node_color="pink", edge_color="pink", ax=ax)
 
     # Show plot
     plt.show()
