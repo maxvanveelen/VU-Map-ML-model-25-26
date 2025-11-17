@@ -25,7 +25,7 @@ def find_node_by_position(G, pos):
     return None
 
 def add_weighted_edge(G, node1, node2):
-    pos = nx.get_node_attributes(G, 'pos')
+    pos = nx.get_node_attributes(G, "pos")
     node1_pos = pos[node1]
     node2_pos = pos[node2]
 
@@ -40,13 +40,11 @@ def add_weighted_edge(G, node1, node2):
     G.add_edge(node1, node2, weight=distance)
 
 
-# TODO make entire process more clean and maybe use Trajectory class
-def create_path(G, df):
+def create_traj(G, df, requested_nodes):
     G_path = nx.Graph()
+    traj = Trajectory(G, requested_nodes)
 
-    #1. get random readings for certain nodes, say, 0, 31 - 24. (straight line up)
-    #TODO requested nodes should be an argument of the function
-    requested_nodes = [0, 31, 30, 29, 28, 27, 26, 25, 24]
+    #1. get random readings for requested nodes
     requested_node_positions = []
 
     for n in requested_nodes:
@@ -56,7 +54,7 @@ def create_path(G, df):
     requested_node_random_picks = pd.DataFrame()
 
     for n in requested_node_positions:
-        matched_rows = df[(df['x'] == n[0]) & (df['z'] == n[1])]
+        matched_rows = df[(df["x"] == n[0]) & (df["z"] == n[1])]
         random_row = matched_rows.sample(n=1, random_state=None)  # optional random_state for reproducibility
         requested_node_random_picks = pd.concat([requested_node_random_picks, random_row], ignore_index=True)
 
@@ -64,24 +62,19 @@ def create_path(G, df):
 
     #2. get predicted locations from model
     #TODO: model might not always have this name
-    with open('sklearn_models/multilayer/Direct location prediction-11-12--11-03-11.pkl', 'rb') as file:
+    with open("sklearn_models/multilayer/Direct location prediction-11-12--11-03-11.pkl", "rb") as file:
         model = pickle.load(file)
 
     y_pred = model.predict(requested_node_random_picks)
     print("Prediction:", y_pred)
 
-    #3. Put predicted locations in a Graph
+    #3. Build traj using Trajectory.update()
     for i, n in enumerate(y_pred):
-        pos = (y_pred[i][0], y_pred[i][2])
-        G_path.add_node(requested_nodes[i], pos=(pos))
+        traj.update(y_pred[i][0], y_pred[i][1], y_pred[i][2], None)
 
-    #4. add edges between predicted locations
-    for i, n in enumerate(requested_nodes):
-        if i < len(requested_nodes) - 1:
-            G_path.add_edge(requested_nodes[i], requested_nodes[i+1])
-
-    #TODO return that graph
-    return G_path
+    # Return the traj
+    print(traj)
+    return traj
 
 def main():
     G = nx.Graph()
@@ -92,7 +85,7 @@ def main():
     print(df)
 
     # Add nodes to network G
-    for i, (x, y, z) in enumerate(df[['x', 'y', 'z']].values):
+    for i, (x, y, z) in enumerate(df[["x", "y", "z"]].values):
         if find_node_by_position(G, (x, z)) is None:
             print(i, x, y, z)
             G.add_node(G.number_of_nodes(), pos=(x, z))
@@ -139,10 +132,13 @@ def main():
     add_weighted_edge(G, 26, 27)
     add_weighted_edge(G, 27, 28)
     add_weighted_edge(G, 28, 29)
+    add_weighted_edge(G, 29, 30)
     add_weighted_edge(G, 30, 31)
     add_weighted_edge(G, 31, 0)
 
-    G_path = create_path(G, df)
+    # path = [0, 31, 30, 29, 28, 27, 26, 25, 24]
+    path = [0, 1, 2, 3, 4, 32, 33, 34, 35, 36, 37, 6, 7, 8, 9, 10, 11, 12]
+    traj = create_traj(G, df, path)
 
     # Prepare window with image, flip y-axis of figure and image.
     fig, ax = plt.subplots()
@@ -152,23 +148,19 @@ def main():
     ax.invert_yaxis()
 
     # Draw the graph on top of the image
-    pos = nx.get_node_attributes(G, 'pos')
+    pos = nx.get_node_attributes(G, "pos")
     scale = 5538.46153846 # TODO: this number is just an estimate obtained by dividing the desired x value in the image by the actual x in the dataframe
-    pos = {node: (x * scale, y * scale) for node, (x, y) in pos.items()}
-    nx.draw(G, pos, with_labels=True, node_color="cyan", edge_color="black", ax=ax)
+    pos = {node: (x * scale, z * scale) for node, (x, z) in pos.items()}
+    nx.draw(G, pos, with_labels=True, node_color="cyan", edge_color="cyan", ax=ax)
 
     # Add weight labels to edges
-    edge_labels = nx.get_edge_attributes(G, 'weight')
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    # edge_labels = nx.get_edge_attributes(G, "weight")
+    # nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
-    # Draw the graph on top of the image (G_path) TODO: make dry or add function for doing this or something
-    pos = nx.get_node_attributes(G_path, 'pos')
-    scale = 5538.46153846 # TODO: this number is just an estimate obtained by dividing the desired x value in the image by the actual x in the dataframe
-    pos = {node: (x * scale, y * scale) for node, (x, y) in pos.items()}
-    nx.draw(G_path, pos, with_labels=True, node_color="pink", edge_color="pink", ax=ax)
+    traj.draw(ax)
 
     # Show plot
     plt.show()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
