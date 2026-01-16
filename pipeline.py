@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import pickle
 import time
+import math
 # import winsound
 
 from sklearn.discriminant_analysis import StandardScaler
@@ -420,6 +421,12 @@ def handle_pipeline(pipeline, name, X_train, X_test, y_train, y_test, search_gri
 
         start = time.time()
         predictions = fitted_model.predict(X_test)
+
+        errors = y_test - predictions
+        std_error = np.std(errors, ddof=1)
+            
+        print("std deviation of error: ", std_error)
+
         # print("predictions", predictions)
         # print("actual", y_test)
         print(f"{name} took {time.time() - start} to predict on {len(X_test)} samples")

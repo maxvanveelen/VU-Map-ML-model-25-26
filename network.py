@@ -73,7 +73,6 @@ def create_traj(G, df, requested_nodes):
         traj.update(y_pred[i][0], y_pred[i][1], y_pred[i][2], None)
 
     # Return the traj
-    print(traj)
     return traj
 
 def main():
@@ -137,7 +136,7 @@ def main():
     add_weighted_edge(G, 31, 0)
 
     # path = [0, 31, 30, 29, 28, 27, 26, 25, 24]
-    path = [0, 1, 2, 3, 4, 32, 33, 34, 35, 36, 37, 6, 7, 8, 9, 10, 11, 12]
+    path = [0, 1, 2, 3, 4, 32, 33, 34, 35, 36, 37, 6, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 38, 39, 40, 41]
     traj = create_traj(G, df, path)
 
     # Prepare window with image, flip y-axis of figure and image.
@@ -157,7 +156,7 @@ def main():
     # edge_labels = nx.get_edge_attributes(G, "weight")
     # nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
-    traj.draw(ax)
+    traj.draw_traj(ax)
 
     # Show plot
     plt.show()
