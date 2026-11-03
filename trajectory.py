@@ -24,15 +24,15 @@ class Candidate:
     # is_best: TODO
 
     def __init__(self):
-        edge_id = None
-        u = None
-        v = None
-        projection = None
-        distance = None
-        geom = None
-        log_emission = None
-        rssi_point = None
-        is_best = False
+        self.edge_id = None
+        self.u = None
+        self.v = None
+        self.projection = None
+        self.distance = None
+        self.geom = None
+        self.log_emission = None
+        self.rssi_point = None
+        self.is_best = False
 
     def __str__(self):
         result = [
@@ -50,6 +50,7 @@ class Candidate:
         ]
         return "".join(result)
 
+# TODO: real_node_ids, called requested_nodes in network.py, does not make any sense here once we use our own data.
 class Trajectory:
     history: List[dict]
     current_state: dict
@@ -156,17 +157,14 @@ class Trajectory:
         self.match_HMM_Viterbi()
 
         # Add info to traj_graph
-        node_id = self.real_node_ids[len(self.history) - 1]
+        node_id = self.observation_label(len(self.history) - 1)
         pos = (self.current_state["raw"]["x"], self.current_state["raw"]["z"])
         self.traj_graph.add_node(node_id, pos=(pos), color="pink")
         if len(self.history) > 1:
-            self.traj_graph.add_edge(self.real_node_ids[len(self.history) - 2], node_id, color="pink")
+            self.traj_graph.add_edge(self.observation_label(len(self.history) - 2), node_id, color="pink")
 
         for i, c in enumerate(self.current_state["candidates"]):
-
-            print(c)
-
-            pos = (c.projection.x, c.projection.y)
+            pos =(c.projection.x, c.projection.y)
             if c.is_best:
                 self.traj_graph.add_node(f"C{node_id}_{i}", pos=(pos), color="green")
                 self.traj_graph.add_edge(node_id, f"C{node_id}_{i}", color="green")
@@ -174,6 +172,12 @@ class Trajectory:
                 self.traj_graph.add_node(f"C{node_id}_{i}", pos=(pos), color="yellow")
                 self.traj_graph.add_edge(node_id, f"C{node_id}_{i}", color="yellow")
     
+    def observation_label(self, i):
+        """Returns the real node id for simulated data, otherwise just the observation number."""
+        if self.real_node_ids is not None:
+            return self.real_node_ids[i]
+        return i
+
     def match(self):
         best_projection = None
         best_segment = None
@@ -298,6 +302,11 @@ class Trajectory:
             if geom.intersects(search_area):
                 guaranteed_edge_ids.append(edge_id)
 
+        # no edges within radius: use the nearest edge, otherwise there are no candidates
+        if not guaranteed_edge_ids:
+            nearest_edge_id = min(self.edge_geoms, key=lambda eid: self.edge_geoms[eid][2].distance(rssi_point))
+            guaranteed_edge_ids = [nearest_edge_id]
+
         candidates = []
 
         for eid in guaranteed_edge_ids:
@@ -335,7 +344,7 @@ class Trajectory:
         cand2_nearest_node, cand2_dist_to_nearest_node = nearest_node(cand2.projection, self.kdtree, self.node_ids)
 
         try:
-            shortest_path = nx.shortest_path_length(self.path_graph, source=cand1_nearest_node, target=cand2_nearest_node, weight="distance")
+            shortest_path = nx.shortest_path_length(self.path_graph, source=cand1_nearest_node, target=cand2_nearest_node, weight="weight")
         except nx.NetworkXNoPath:
             return -1e9  # impossible transition
         

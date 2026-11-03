@@ -1,21 +1,18 @@
-#TODO fix imports 
-
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 import pandas as pd
 import math
-from trajectory import Trajectory
 import pickle
+import sys
 
-from sklearn.discriminant_analysis import StandardScaler
-from util import X_MAX, Y_MAX, Z_MAX, get_ap_locations_names, least_squares_trilaterate, load_files, filter_columns, evaluate_model, split_data, split_data_parts, trilaterate, unscale_xyz
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
-from sklearn.pipeline import FunctionTransformer, Pipeline, FeatureUnion
-from sklearn.model_selection import GridSearchCV, ParameterGrid
+from trajectory import Trajectory
+from util import load_files
+import interpret_rssi_scan
+import ap_matching
 
+# not used directly, but pickle needs it to load the model in create_traj (the model was saved from pipeline.py)
 from pipeline import SplitPipeline
 
 def find_node_by_position(G, pos):
@@ -39,6 +36,26 @@ def add_weighted_edge(G, node1, node2):
     
     G.add_edge(node1, node2, weight=distance)
 
+
+# Creates a Trajectory object from an RSSI scan I recorded myself
+def my_create_traj(G, rssi_scan_filename):
+    traj = Trajectory(G, None)
+
+    #1. Get data from rssi scan file
+    session = interpret_rssi_scan.RssiScanSession.from_csv(rssi_scan_filename)
+
+    #2. Get strongest rssi of each AP per scan
+    bssid_to_ap = ap_matching.load_bssid_to_ap()
+    ap_rssi_per_scan = [ap_matching.scan_to_ap_rssi(scan, bssid_to_ap) for scan in session]
+
+    #3. TODO: multilateration using the router locations
+    raise NotImplementedError("Multilateration is not implemented yet")
+
+    #4. Build traj using Trajectory.update()
+    # for scan, (x, y, z) in zip(session, positions):
+    #     traj.update(x, y, z, scan.timestamp.timestamp())
+
+    return traj
 
 def create_traj(G, df, requested_nodes):
     G_path = nx.Graph()
@@ -78,8 +95,8 @@ def create_traj(G, df, requested_nodes):
 def main():
     G = nx.Graph()
 
+    # df = load_files(["rssi-scan-logs/rssi_scan_F5_R1_1.csv"])
     df = load_files(["samples F5 everything.csv"])
-    # df = load_files(["samples F6 everything.csv"])
 
     print(df)
 
@@ -137,11 +154,16 @@ def main():
 
     # path = [0, 31, 30, 29, 28, 27, 26, 25, 24]
     path = [0, 1, 2, 3, 4, 32, 33, 34, 35, 36, 37, 6, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 38, 39, 40, 41]
-    traj = create_traj(G, df, path)
+    # Usage: python network.py [scan.csv]   (no file = simulated data on the path above)
+    if len(sys.argv) > 1:
+        traj = my_create_traj(G, sys.argv[1])
+    else:
+        traj = create_traj(G, df, path)
+
 
     # Prepare window with image, flip y-axis of figure and image.
     fig, ax = plt.subplots()
-    img = mpimg.imread("floorplans/floor-06-cropped.png")
+    img = mpimg.imread("floorplans/floor-05-cropped.png")
     img_flipped = np.flipud(img)
     ax.imshow(img_flipped, alpha=0.5)
     ax.invert_yaxis()
