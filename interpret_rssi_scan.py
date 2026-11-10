@@ -6,6 +6,15 @@ from statistics import mean
 # Reads the csv files made by rssi_scan.py.
 # Every row is one AP reading, rows with the same timestamp belong to the same scan.
 
+def nmcli_to_dbm(stored_rssi):
+    """
+    rssi_scan.py stored nmcli's signal percentage minus 110, this converts it back to real dBm.
+    nmcli (NetworkManager 1.36) calculates the percentage as a straight line from -100 dBm (0%) to -40 dBm (100%),
+    so anything stronger than -40 dBm is capped at -40.
+    """
+    percent = stored_rssi + 110
+    return 0.6 * percent - 100
+
 class ApReading:
     def __init__(self, ssid, bssid, rssi_dbm, frequency_mhz, signal_quality):
         self.ssid = ssid
@@ -19,7 +28,7 @@ class ApReading:
         return cls(
             ssid=row["ssid"],
             bssid=row["bssid"].replace("\\:", ":"),             # nmcli escapes the colons in a BSSID as \:
-            rssi_dbm=int(row["rssi_dbm"]),
+            rssi_dbm=nmcli_to_dbm(int(row["rssi_dbm"])),
             frequency_mhz=int(row["frequency_ghz"].split()[0]),  # "2437 MHz" -> 2437
             signal_quality=row["signal_quality"],
         )

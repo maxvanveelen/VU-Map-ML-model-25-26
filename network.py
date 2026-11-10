@@ -6,11 +6,13 @@ import pandas as pd
 import math
 import pickle
 import sys
+import os
+from util import load_files, X_MAX, Z_MAX
 
-from trajectory import Trajectory
-from util import load_files
+import multilateration
 import interpret_rssi_scan
 import ap_matching
+from trajectory import Trajectory
 
 # not used directly, but pickle needs it to load the model in create_traj (the model was saved from pipeline.py)
 from pipeline import SplitPipeline
@@ -36,26 +38,34 @@ def add_weighted_edge(G, node1, node2):
     
     G.add_edge(node1, node2, weight=distance)
 
+def floor_from_filename(rssi_scan_filename):
+    """'data/rssi_scan_logs/rssi_scan_F5_R1_1.csv' -> 5"""
+    floor_part = os.path.basename(rssi_scan_filename).split("_")[2]
+    return int(floor_part[1:])
 
 # Creates a Trajectory object from an RSSI scan I recorded myself
-def my_create_traj(G, rssi_scan_filename):
+def create_traj_from_rssi_scan(G, rssi_scan_filename):
     traj = Trajectory(G, None)
 
     #1. Get data from rssi scan file
     session = interpret_rssi_scan.RssiScanSession.from_csv(rssi_scan_filename)
+    floor = floor_from_filename(rssi_scan_filename)
 
-    #2. Get strongest rssi of each AP per scan
+    #2. Load AP lookup and positions
     bssid_to_ap = ap_matching.load_bssid_to_ap()
-    ap_rssi_per_scan = [ap_matching.scan_to_ap_rssi(scan, bssid_to_ap) for scan in session]
+    ap_positions = multilateration.load_ap_positions()
 
-    #3. TODO: multilateration using the router locations
-    raise NotImplementedError("Multilateration is not implemented yet")
+    #3. Estimate a position for every scan and add it to the traj
+    for scan in session:
+        ap_rssi = ap_matching.scan_to_ap_rssi(scan, bssid_to_ap)
+        selected_aps = multilateration.select_aps(ap_rssi, ap_positions, floor)
+        x, z = multilateration.estimate_position(selected_aps, ap_positions)
 
-    #4. Build traj using Trajectory.update()
-    # for scan, (x, y, z) in zip(session, positions):
-    #     traj.update(x, y, z, scan.timestamp.timestamp())
+        # the graph uses positions divided by X_MAX and Z_MAX (see util.scale_xyz)
+        traj.update(x/X_MAX, None, z/Z_MAX, scan.timestamp.timestamp())
 
     return traj
+
 
 def create_traj(G, df, requested_nodes):
     G_path = nx.Graph()
@@ -156,7 +166,7 @@ def main():
     path = [0, 1, 2, 3, 4, 32, 33, 34, 35, 36, 37, 6, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 38, 39, 40, 41]
     # Usage: python network.py [scan.csv]   (no file = simulated data on the path above)
     if len(sys.argv) > 1:
-        traj = my_create_traj(G, sys.argv[1])
+        traj = create_traj_from_rssi_scan(G, sys.argv[1])
     else:
         traj = create_traj(G, df, path)
 
