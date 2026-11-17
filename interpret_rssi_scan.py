@@ -1,10 +1,21 @@
 import csv
+import os
 import sys
 from datetime import datetime
 from statistics import mean
 
 # Reads the csv files made by rssi_scan.py.
 # Every row is one AP reading, rows with the same timestamp belong to the same scan.
+# There are two formats:
+#   old (nmcli): timestamp, ssid, bssid, rssi_dbm (nmcli % - 110), frequency_ghz ("2437 MHz"), signal_quality
+#   new (iw):    timestamp (with ms), ssid, bssid, rssi_dbm (real dBm), frequency_mhz, last_seen_ms
+#                + a <name>_checkpoints.csv file with: checkpoint, timestamp
+
+def parse_timestamp(text):
+    """New files have milliseconds in the timestamp, old ones don't."""
+    if "." in text:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S.%f")
+    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
 
 def nmcli_to_dbm(stored_rssi):
     """
@@ -16,21 +27,30 @@ def nmcli_to_dbm(stored_rssi):
     return 0.6 * percent - 100
 
 class ApReading:
-    def __init__(self, ssid, bssid, rssi_dbm, frequency_mhz, signal_quality):
+    def __init__(self, ssid, bssid, rssi_dbm, frequency_mhz, last_seen_ms):
         self.ssid = ssid
         self.bssid = bssid
         self.rssi_dbm = rssi_dbm
         self.frequency_mhz = frequency_mhz
-        self.signal_quality = signal_quality
+        self.last_seen_ms = last_seen_ms     # how old the reading was when it was scanned, None for old (nmcli) files
 
     @classmethod
     def from_row(cls, row):
+        if "last_seen_ms" in row:
+            return cls(
+                ssid=row["ssid"],
+                bssid=row["bssid"],
+                rssi_dbm=float(row["rssi_dbm"]),
+                frequency_mhz=int(row["frequency_mhz"]),
+                last_seen_ms=int(row["last_seen_ms"]),
+            )
+
         return cls(
             ssid=row["ssid"],
             bssid=row["bssid"].replace("\\:", ":"),             # nmcli escapes the colons in a BSSID as \:
             rssi_dbm=nmcli_to_dbm(int(row["rssi_dbm"])),
             frequency_mhz=int(row["frequency_ghz"].split()[0]),  # "2437 MHz" -> 2437
-            signal_quality=row["signal_quality"],
+            last_seen_ms=None,
         )
 
     @property
@@ -85,9 +105,23 @@ class RssiScan:
         return bands
 
 
+def load_checkpoints(scan_csv_path):
+    """
+    Returns the checkpoints of a recording as a list of (checkpoint number, timestamp).
+    They are in <name>_checkpoints.csv next to <name>.csv, old recordings don't have this file and get an empty list.
+    """
+    checkpoint_path = scan_csv_path[:-len(".csv")] + "_checkpoints.csv"
+    if not os.path.isfile(checkpoint_path):
+        return []
+
+    with open(checkpoint_path, newline="", encoding="utf-8") as file:
+        return [(int(row["checkpoint"]), parse_timestamp(row["timestamp"])) for row in csv.DictReader(file)]
+
+
 class RssiScanSession:
-    def __init__(self, scans):
+    def __init__(self, scans, checkpoints=None):
         self.scans = sorted(scans, key=lambda s: s.timestamp)
+        self.checkpoints = checkpoints or []    # list of (checkpoint number, timestamp)
 
     @classmethod
     def from_csv(cls, path):
@@ -95,18 +129,21 @@ class RssiScanSession:
 
         with open(path, newline="", encoding="utf-8") as file:
             for row in csv.DictReader(file):
-                timestamp = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+                timestamp = parse_timestamp(row["timestamp"])
                 readings_per_timestamp.setdefault(timestamp, []).append(ApReading.from_row(row))
 
         scans = [RssiScan(timestamp, readings) for timestamp, readings in readings_per_timestamp.items()]
-        return cls(scans)
+        return cls(scans, load_checkpoints(path))
 
     @classmethod
     def from_csvs(cls, paths):
         scans = []
+        checkpoints = []
         for path in paths:
-            scans = scans + cls.from_csv(path).scans
-        return cls(scans)
+            session = cls.from_csv(path)
+            scans = scans + session.scans
+            checkpoints = checkpoints + session.checkpoints
+        return cls(scans, checkpoints)
 
     def __len__(self):
         return len(self.scans)
